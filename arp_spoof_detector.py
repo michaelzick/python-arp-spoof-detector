@@ -4,35 +4,29 @@ import scapy.all as scapy
 from scapy.layers import http
 
 
+def get_mac(target_ip):
+    arp_request = scapy.ARP(pdst=target_ip)
+    broadcast = scapy.Ether(dst='ff:ff:ff:ff:ff:ff')
+    arp_request_broadcast = broadcast/arp_request
+    answered_list = scapy.srp(arp_request_broadcast,
+                              timeout=1, verbose=False)[0]
+    return answered_list[0][1].hwsrc
+
+
 def sniffer(interface):
     scapy.sniff(iface=interface, store=False,
                 prn=process_sniffed_packet)
 
 
-def get_url(packet):
-    return packet[http.HTTPRequest].Host + \
-        packet[http.HTTPRequest].Path
-
-
-def get_login_info(packet):
-    if packet.haslayer(scapy.Raw):
-        load_as_str = str(packet[scapy.Raw].load)
-        keywords = ['username', 'uname', 'login',
-                    'email', 'password', 'passwd', 'pass']
-        for keyword in keywords:
-            if keyword in load_as_str:
-                return load_as_str
-
-
 def process_sniffed_packet(packet):
-    if packet.haslayer(http.HTTPRequest):
-        url = str(get_url(packet))
-        print('[+] HTTP Request: ' + url)
-
-        login_info = get_login_info(packet)
-        if login_info:
-            print(
-                '\n\n[+] Possible username and password: ' + login_info + '\n\n')
+    if packet.haslayer(scapy.ARP) and packet[scapy.ARP].op == 2:
+        try:
+            real_mac = get_mac(packet[scapy.ARP].psrc)
+            response_mac = get_mac(packet[scapy.ARP].hwsrc)
+            if real_mac != response_mac:
+                print('[+] You\'re under attack!')
+        except IndexError:
+            pass
 
 
 sniffer('eth0')
